@@ -1,0 +1,45 @@
+module NbEXP.PHOAS where
+
+data Ty : Set where
+  emp : Ty
+  fun : Ty → Ty → Ty
+
+data Tm (v : Ty → Set) : Ty → Set where
+  var : ∀ {a} → v a → Tm v a
+  app : ∀ {a b} → Tm v (fun a b) → Tm v a → Tm v b
+  lam : ∀ {a b} → (v a → Tm v b) → Tm v (fun a b)
+
+data Nf (v : Ty → Set) : Ty → Set
+data Ne (v : Ty → Set) : Ty → Set
+
+data Ne v where
+  nvar : ∀ {a} → v a → Ne v a
+  napp : ∀ {a b} → Ne v (fun a b) → Nf v a → Ne v b
+
+data Nf v where
+  neut : Ne v emp → Nf v emp
+  nlam : ∀ {a b} → (v a → Nf v b) → Nf v (fun a b)
+
+Sem : (Ty → Set) → Ty → Set
+Sem v emp       = Ne v emp
+Sem v (fun a b) = Sem v a → Sem v b
+
+lower : ∀ {v : Ty → Set} (a : Ty) → Sem v a → Nf v a
+raise : ∀ {v : Ty → Set} (a : Ty) → Ne v a → Sem v a
+
+lower emp       s = neut s
+lower (fun a b) s = nlam λ x → lower b (s (raise a (nvar x)))
+
+raise emp       n   = n
+raise (fun a b) n x = raise b (napp n (lower a x ))
+
+eval : {v : Ty → Set} {a : Ty} → Tm (Sem v) a → Sem v a
+eval (var x)   = x
+eval (app f t) = eval f (eval t)
+eval (lam t) x = eval (t x)
+
+nf : {a : Ty} → {v : Ty → Set} → Tm (Sem v) a → Nf v a
+nf {a} t = lower a (eval t)
+
+nf_parametric : {a : Ty} → ({v : Ty → Set} → Tm v a) -> ({v : Ty → Set} → Nf v a)
+nf_parametric t = nf t
