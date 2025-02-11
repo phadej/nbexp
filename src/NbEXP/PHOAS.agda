@@ -4,6 +4,10 @@ data Ty : Set where
   emp : Ty
   fun : Ty → Ty → Ty
 
+variable
+  v : Ty → Set
+  A B C : Ty
+
 data Tm (v : Ty → Set) : Ty → Set where
   var : ∀ {a} → v a → Tm v a
   app : ∀ {a b} → Tm v (fun a b) → Tm v a → Tm v b
@@ -13,33 +17,33 @@ data Nf (v : Ty → Set) : Ty → Set
 data Ne (v : Ty → Set) : Ty → Set
 
 data Ne v where
-  nvar : ∀ {a} → v a → Ne v a
-  napp : ∀ {a b} → Ne v (fun a b) → Nf v a → Ne v b
+  nvar : v A → Ne v A
+  napp : Ne v (fun A B) → Nf v A → Ne v B
 
 data Nf v where
   neut : Ne v emp → Nf v emp
-  nlam : ∀ {a b} → (v a → Nf v b) → Nf v (fun a b)
+  nlam : (v A → Nf v B) → Nf v (fun A B)
 
 Sem : (Ty → Set) → Ty → Set
 Sem v emp       = Ne v emp
-Sem v (fun a b) = Sem v a → Sem v b
+Sem v (fun A B) = Sem v A → Sem v B
 
-lower : ∀ {v : Ty → Set} (a : Ty) → Sem v a → Nf v a
-raise : ∀ {v : Ty → Set} (a : Ty) → Ne v a → Sem v a
-
-lower emp       s = neut s
-lower (fun a b) s = nlam λ x → lower b (s (raise a (nvar x)))
-
-raise emp       n   = n
-raise (fun a b) n x = raise b (napp n (lower a x ))
-
-eval : {v : Ty → Set} {a : Ty} → Tm (Sem v) a → Sem v a
+eval : Tm (Sem v) A → Sem v A
 eval (var x)   = x
 eval (app f t) = eval f (eval t)
 eval (lam t) x = eval (t x)
 
-nf : {a : Ty} → {v : Ty → Set} → Tm (Sem v) a → Nf v a
-nf {a} t = lower a (eval t)
+lower : (A : Ty) → Sem v A → Nf v A
+raise : (A : Ty) → Ne v A → Sem v A
 
-nf_parametric : {a : Ty} → ({v : Ty → Set} → Tm v a) -> ({v : Ty → Set} → Nf v a)
+lower emp       s = neut s
+lower (fun A B) s = nlam λ x → lower B (s (raise A (nvar x)))
+
+raise emp       n   = n
+raise (fun A B) n x = raise B (napp n (lower A x))
+
+nf : Tm (Sem v) A → Nf v A
+nf {A = A} t = lower A (eval t)
+
+nf_parametric : ({v : Ty → Set} → Tm v A) -> ({v : Ty → Set} → Nf v A)
 nf_parametric t = nf t
