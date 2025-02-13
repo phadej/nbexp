@@ -1,3 +1,3 @@
 name: nbexp
-depend: standard-library-2.1.1 agda-np
+depend: standard-library-2.2 agda-np
 include: src/
