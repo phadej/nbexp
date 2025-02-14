@@ -42,7 +42,7 @@ data Tm (Γ : Ctx) : Ty → Set where
   tth : Tm Γ one
   inl : Tm Γ A → Tm Γ (sum A B)
   inr : Tm Γ B → Tm Γ (sum A B)
-  eit : Tm Γ (sum A B) → Tm (A ∷ Γ) C → Tm (B ∷ Γ) C → Tm Γ C
+  eit : Tm Γ (sum A B) → Tm Γ (fun A C) → Tm Γ (fun B C) → Tm Γ C
   abs : Tm Γ emp → Tm Γ A
 
 wkₓ : Wk Γ Δ → Var Γ A → Var Δ A
@@ -56,7 +56,7 @@ wkₜ _ tth         = tth
 wkₜ δ (abs t)     = abs (wkₜ δ t)
 wkₜ δ (inl t)     = inl (wkₜ δ t)
 wkₜ δ (inr t)     = inr (wkₜ δ t)
-wkₜ δ (eit t l r) = eit (wkₜ δ t) (wkₜ (keep δ) l) (wkₜ (keep δ) r)
+wkₜ δ (eit t l r) = eit (wkₜ δ t) (wkₜ δ l) (wkₜ δ r)
 
 data Nf (Γ : Ctx) : Ty → Set
 data Ne (Γ : Ctx) : Ty → Set
@@ -90,7 +90,7 @@ data Nf Γ where
   tthₙ : Nf Γ one
   inlₙ : Nf Γ A → Nf Γ (sum A B)
   inrₙ : Nf Γ B → Nf Γ (sum A B)
-  eitₙ : Ne Γ (sum A B) → Nf (A ∷ Γ) C → Nf (B ∷ Γ) C → Nf Γ C
+  eitₙ : Ne Γ (sum A B) → Nf Γ (fun A C) → Nf Γ (fun B C) → Nf Γ C
   absₙ : Ne Γ emp → Nf Γ C
   neuₙ : Ne Γ emp → Nf Γ emp
 
@@ -107,7 +107,7 @@ wkₙ δ (neuₙ t)     = neuₙ (wkᵦ δ t)
 wkₙ δ (inlₙ t)     = inlₙ (wkₙ δ t)
 wkₙ δ (inrₙ t)     = inrₙ (wkₙ δ t)
 wkₙ δ (absₙ t)     = absₙ (wkᵦ δ t)
-wkₙ δ (eitₙ t l r) = eitₙ (wkᵦ δ t) (wkₙ (keep δ) l) (wkₙ (keep δ) r)
+wkₙ δ (eitₙ t l r) = eitₙ (wkᵦ δ t) (wkₙ δ l) (wkₙ δ r)
 
 wkᵦ δ (varₙ x)     = varₙ (wkₓ δ x)
 wkᵦ δ (appₙ f t)   = appₙ (wkᵦ δ f) (wkₙ δ t)
@@ -182,13 +182,13 @@ raise : (A : Ty) → Ne Γ A → Sem Γ A
 lower-tree-emp : Tree Γ (λ Δ → ⊥) → Nf Γ emp
 lower-tree-emp (tip ())
 lower-tree-emp (pnc t)     = neuₙ t
-lower-tree-emp (brn c l r) = eitₙ c (lower-tree-emp l) (lower-tree-emp r)
+lower-tree-emp (brn c l r) = eitₙ c (lamₙ (lower-tree-emp l)) (lamₙ (lower-tree-emp r))
 
 lower-tree-sum : Tree Γ (λ Δ → Sem Δ A ⊎ Sem Δ B) → Nf Γ (sum A B)
 lower-tree-sum (tip (inj₁ x)) = inlₙ (lower _ x)
 lower-tree-sum (tip (inj₂ y)) = inrₙ (lower _ y)
 lower-tree-sum (pnc t)        = absₙ t
-lower-tree-sum (brn t l r)    = eitₙ t (lower-tree-sum l) (lower-tree-sum r)
+lower-tree-sum (brn t l r)    = eitₙ t (lamₙ (lower-tree-sum l)) (lamₙ (lower-tree-sum r))
 
 lower     emp       t = lower-tree-emp t
 lower     one       _ = tthₙ
@@ -210,9 +210,7 @@ eval γ (abs t)     = absₛ (eval γ t)
 eval γ tth         = tt
 eval γ (inl t)     = tip (inj₁ (eval γ t))
 eval γ (inr t)     = tip (inj₂ (eval γ t))
-eval γ (eit t l r) = eitₛ (eval γ t)
-  (λ Δ δ x → eval (x ∷ wkₑ δ γ) l)
-  (λ Δ δ y → eval (y ∷ wkₑ δ γ) r)
+eval γ (eit t l r) = eitₛ (eval γ t) (eval γ l) (eval γ r)
 
 env-Empty : Env [] []
 env-Empty = []
@@ -231,7 +229,7 @@ module Demo where
   ty = fun (sum bool bool) bool
 
   tm : Tm [] ty
-  tm = lam (eit (eit (var zero) (var zero) (var zero)) true false)
+  tm = lam (eit (eit (var zero) (lam (var zero)) (lam (var zero))) (lam true) (lam false))
 
   ev : Nf [] ty
   ev = lower {Γ = []} ty (eval env-Empty tm)
@@ -239,9 +237,8 @@ module Demo where
   ex : Nf [] ty
   ex = lamₙ
     (eitₙ (varₙ zero)
-      (eitₙ (varₙ zero) (inrₙ tthₙ) (inlₙ tthₙ))
-      (eitₙ (varₙ zero) (inrₙ tthₙ) (inlₙ tthₙ)))
+      (lamₙ (eitₙ (varₙ zero) (lamₙ (inrₙ tthₙ)) (lamₙ (inlₙ tthₙ))))
+      (lamₙ (eitₙ (varₙ zero) (lamₙ (inrₙ tthₙ)) (lamₙ (inlₙ tthₙ)))))
 
   _ : ev ≡ ex
   _ = refl
-

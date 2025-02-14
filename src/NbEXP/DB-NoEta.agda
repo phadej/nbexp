@@ -28,7 +28,7 @@ data Tm (Γ : Ctx) : Ty → Set where
   lam : Tm (A ∷ Γ) B → Tm Γ (fun A B)
   inl : Tm Γ A → Tm Γ (sum A B)
   inr : Tm Γ B → Tm Γ (sum A B)
-  eit : Tm Γ (sum A B) → Tm (A ∷ Γ) C → Tm (B ∷ Γ) C → Tm Γ C
+  eit : Tm Γ (sum A B) → Tm Γ (fun A C) → Tm Γ (fun B C) → Tm Γ C
   abs : Tm Γ emp → Tm Γ A
 
 wkₓ : Wk Γ Δ → Var Γ A → Var Δ A
@@ -40,7 +40,7 @@ wkₜ δ (app f t)   = app (wkₜ δ f) (wkₜ δ t)
 wkₜ δ (lam t)     = lam (wkₜ (keep δ) t)
 wkₜ δ (inl t)     = inl (wkₜ δ t)
 wkₜ δ (inr t)     = inr (wkₜ δ t)
-wkₜ δ (eit e l r) = eit (wkₜ δ e) (wkₜ (keep δ) l) (wkₜ (keep δ) r)
+wkₜ δ (eit e l r) = eit (wkₜ δ e) (wkₜ δ l) (wkₜ δ r)
 wkₜ δ (abs t)     = abs (wkₜ δ t)
 
 data Nf (Γ : Ctx) : Ty → Set
@@ -55,7 +55,7 @@ data Nf Γ where
 data Ne Γ where
   varₙ : Var Γ A → Ne Γ A
   appₙ : Ne Γ (fun A B) → Nf Γ A → Ne Γ B
-  eitₙ : Ne Γ (sum A B) → Nf (A ∷ Γ) C → Nf (B ∷ Γ) C → Ne Γ C
+  eitₙ : Ne Γ (sum A B) → Nf Γ (fun A C) → Nf Γ (fun B C) → Ne Γ C
   absₙ : Ne Γ emp → Ne Γ A
 
 wkₙ : Wk Γ Δ → Nf Γ A → Nf Δ A
@@ -69,7 +69,7 @@ wkₙ δ (inrₙ t)     = inrₙ (wkₙ δ t)
 wkᵦ δ (varₙ x)     = varₙ (wkₓ δ x)
 wkᵦ δ (appₙ f t)   = appₙ (wkᵦ δ f) (wkₙ δ t)
 wkᵦ δ (absₙ t)     = absₙ (wkᵦ δ t)
-wkᵦ δ (eitₙ t l r) = eitₙ (wkᵦ δ t) (wkₙ (keep δ) l) (wkₙ (keep δ) r)
+wkᵦ δ (eitₙ t l r) = eitₙ (wkᵦ δ t) (wkₙ δ l) (wkₙ δ r)
 
 Sem′ : Ctx → Ty → Set
 Sem  : Ctx → Ty → Set
@@ -116,22 +116,24 @@ keepₑₙᵥ : Env Γ Δ → Env (A ∷ Γ) (A ∷ Δ)
 keepₑₙᵥ {A = A} γ = raise A (varₙ zero) ∷ wkₑₙᵥ wk γ
 
 appₛ : Sem Γ (fun A B) → Sem Γ A → Sem Γ B
-appₛ (inj₁ f) t = inj₁ (appₙ f (lower _ t))
+appₛ (inj₁ f) t = raise _ (appₙ f (lower _ t))
 appₛ (inj₂ f) t = f _ id t
 
 absₛ : Sem Γ emp → Sem Γ A
-absₛ (inj₁ t) = inj₁ (absₙ t)
+absₛ (inj₁ t) = raise _ (absₙ t)
 absₛ (inj₂ ())
+
+eitₛ : Sem Γ (sum A B) → Sem Γ (fun A C) → Sem Γ (fun B C) → Sem Γ C
+eitₛ (inj₁ t)        l r = raise _ (eitₙ t (lower _ l) (lower _ r))
+eitₛ (inj₂ (inj₁ x)) l r = appₛ l x
+eitₛ (inj₂ (inj₂ y)) l r = appₛ r y
 
 eval : Env Γ Δ → Tm Γ A → Sem Δ A
 eval γ (var x)     = lookup γ x
 -- elimination forms
 eval γ (app f t)   = appₛ (eval γ f) (eval γ t)
 eval γ (abs t)     = absₛ (eval γ t)
-eval γ (eit t l r) with eval γ t
-... | inj₁ n        = inj₁ (eitₙ n (lower _ (eval (keepₑₙᵥ γ) l)) (lower _ (eval (keepₑₙᵥ γ) r)))
-... | inj₂ (inj₁ t) = eval (t ∷ γ) l
-... | inj₂ (inj₂ t) = eval (t ∷ γ) r
+eval γ (eit t l r) = eitₛ (eval γ t) (eval γ l) (eval γ r)
 -- introduction forms
 eval γ (lam t)     = inj₂ λ Ω δ s → eval (s ∷ wkₑₙᵥ δ γ) t
 eval γ (inl t)     = inj₂ (inj₁ (eval γ t))

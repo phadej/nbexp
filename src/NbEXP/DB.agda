@@ -27,7 +27,7 @@ data Tm (Γ : Ctx) : Ty → Set where
   lam : Tm (A ∷ Γ) B → Tm Γ (fun A B)
   inl : Tm Γ A → Tm Γ (sum A B)
   inr : Tm Γ B → Tm Γ (sum A B)
-  eit : Tm Γ (sum A B) → Tm (A ∷ Γ) C → Tm (B ∷ Γ) C → Tm Γ C
+  eit : Tm Γ (sum A B) → Tm Γ (fun A C) → Tm Γ (fun B C) → Tm Γ C
   abs : Tm Γ emp → Tm Γ A
 
 wkₓ : Wk Γ Δ → Var Γ A → Var Δ A
@@ -40,7 +40,7 @@ wkₜ δ (lam t)     = lam (wkₜ (keep δ) t)
 wkₜ δ (abs t)     = abs (wkₜ δ t)
 wkₜ δ (inl t)     = inl (wkₜ δ t)
 wkₜ δ (inr t)     = inr (wkₜ δ t)
-wkₜ δ (eit t l r) = eit (wkₜ δ t) (wkₜ (keep δ) l) (wkₜ (keep δ) r)
+wkₜ δ (eit t l r) = eit (wkₜ δ t) (wkₜ δ l) (wkₜ δ r)
 
 -- indicator for types of allowed neutral terms
 data N : Ty → Set where
@@ -60,7 +60,7 @@ data Nf Γ where
 data Ne Γ where
   varₙ : Var Γ A → Ne Γ A
   appₙ : Ne Γ (fun A B) → Nf Γ A → Ne Γ B
-  eitₙ : Ne Γ (sum A B) → Nf (A ∷ Γ) C → Nf (B ∷ Γ) C → Ne Γ C
+  eitₙ : Ne Γ (sum A B) → Nf Γ (fun A C) → Nf Γ (fun B C) → Ne Γ C
 
 wkₙ : Wk Γ Δ → Nf Γ A → Nf Δ A
 wkᵦ : Wk Γ Δ → Ne Γ A → Ne Δ A
@@ -72,7 +72,7 @@ wkₙ δ (inrₙ t)     = inrₙ (wkₙ δ t)
 
 wkᵦ δ (varₙ x)     = varₙ (wkₓ δ x)
 wkᵦ δ (appₙ f t)   = appₙ (wkᵦ δ f) (wkₙ δ t)
-wkᵦ δ (eitₙ t l r) = eitₙ (wkᵦ δ t) (wkₙ (keep δ) l) (wkₙ (keep δ) r)
+wkᵦ δ (eitₙ t l r) = eitₙ (wkᵦ δ t) (wkₙ δ l) (wkₙ δ r)
 
 Sem : Ctx → Ty → Set
 Sem Γ emp       = Ne Γ emp
@@ -85,14 +85,6 @@ wkₛ {A = fun A B} δ t = λ Ω δ′ x → t Ω (δ ⨟ δ′) x
 wkₛ {A = sum A B} δ (inj₁ t)        = inj₁ (wkᵦ δ t)
 wkₛ {A = sum A B} δ (inj₂ (inj₁ t)) = inj₂ (inj₁ (wkₛ δ t))
 wkₛ {A = sum A B} δ (inj₂ (inj₂ t)) = inj₂ (inj₂ (wkₛ δ t))
-
-appₛ : Sem Γ (fun A B) → Sem Γ A → Sem Γ B
-appₛ f t = f _ id t
-
-absₛ : Sem Γ emp → Sem Γ A
-absₛ {A = emp}     t = t
-absₛ {A = fun A B} t = λ Δ δ s → absₛ (wkᵦ δ t)
-absₛ {A = sum A B} t = inj₂ (inj₂ (absₛ t))
 
 Env : Ctx → Ctx → Set
 Env Γ Δ = NP (Sem Δ) Γ
@@ -119,18 +111,24 @@ raise emp       t = t
 raise (fun A B) t = λ Δ δ s → raise B (appₙ (wkᵦ δ t) (lower A s))
 raise (sum A B) t = inj₁ t
 
-keepₑ : Env Γ Δ → Env (A ∷ Γ) (A ∷ Δ)
-keepₑ {A = A} γ = raise A (varₙ zero) ∷ wkₑ wk γ
+appₛ : Sem Γ (fun A B) → Sem Γ A → Sem Γ B
+appₛ f t = f _ id t
+
+absₛ : Sem Γ emp → Sem Γ A
+absₛ {A = emp}     t = t
+absₛ {A = fun A B} t = λ Δ δ s → absₛ (wkᵦ δ t)
+absₛ {A = sum A B} t = inj₂ (inj₂ (absₛ t))
+
+eitₛ : Sem Γ (sum A B) → Sem Γ (fun A C) → Sem Γ (fun B C) → Sem Γ C
+eitₛ (inj₁ t)        l r = raise _ (eitₙ t (lower _ l) (lower _ r))
+eitₛ (inj₂ (inj₁ x)) l r = appₛ l x
+eitₛ (inj₂ (inj₂ y)) l r = appₛ r y
 
 eval : Env Γ Δ → Tm Γ A → Sem Δ A
 eval γ (var x)     = lookup γ x
 eval γ (lam t)     = λ Ω δ s → eval (s ∷ wkₑ δ γ) t
-eval γ (app f t)   = appₛ (eval γ f) (eval γ t)
-eval γ (abs t)     = absₛ (eval γ t)
 eval γ (inl t)     = inj₂ (inj₁ (eval γ t))
 eval γ (inr t)     = inj₂ (inj₂ (eval γ t))
-eval γ (eit t l r) with eval γ t
-... | inj₁ t = raise _ (eitₙ t (lower _ (eval (keepₑ γ) l)) (lower _ (eval (keepₑ γ) r)))
-... | inj₂ (inj₁ t) = eval (t ∷ γ) l
-... | inj₂ (inj₂ t) = eval (t ∷ γ) r
-
+eval γ (app f t)   = appₛ (eval γ f) (eval γ t)
+eval γ (abs t)     = absₛ (eval γ t)
+eval γ (eit t l r) = eitₛ (eval γ t) (eval γ l) (eval γ r)
