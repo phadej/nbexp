@@ -7,7 +7,7 @@ open import Data.NP.Wk using (Wk; id; wk; skip; keep; wk-idx; _⨟_)
 open import Data.Sum using (_⊎_; inj₁; inj₂)
 open import Data.Nat using (ℕ; zero; suc)
 open import Data.Maybe using (Maybe; just; nothing)
-open import Data.Product using (_×_ ; _,_)
+open import Data.Product using (Σ; _×_ ; _,_)
 open import Data.Bool using (Bool; true; false)
 open import Data.Empty using (⊥)
 
@@ -33,6 +33,11 @@ data Co : Ty → Ty → Set where
   trans : Co A B → Co B C → Co A C
   prd : Co (fun A boo) (prd A)
   fun : Co A₁ A₂ → Co B₁ B₂ → Co (fun A₁ B₁) (fun A₂ B₂)
+  fun₁ : Co (fun A₁ B₁) (fun A₂ B₂) → Co A₁ A₂
+  fun₂ : Co (fun A₁ B₁) (fun A₂ B₂) → Co B₁ B₂
+
+impossible : Co boo (fun A B) → ⊥
+impossible = {!!}
 
 data Tm (Γ : Ctx) : Ty → Set where
   var : Var Γ A → Tm Γ A
@@ -76,9 +81,14 @@ data Ne Γ where
   varₙ : Var Γ A → Co A B → Ne Γ B
   appₙ : Ne Γ (fun A B) → Nf Γ A → Ne Γ B
 
+
+
 coe-ne : Ne Γ A → Co A B → Ne Γ B
 coe-ne (varₙ x co′) co = varₙ x (trans co′ co)
 coe-ne (appₙ f t) co = appₙ (coe-ne f (fun refl co)) t
+
+coe-app : Ne Γ (fun A B) → Nf° Γ A → Ne Γ B
+coe-app f (coeₙ t co) = appₙ (coe-ne f (fun (sym co) refl)) t 
 
 wkₙ : Wk Γ Δ → Nf Γ A → Nf Δ A
 wkᵦ : Wk Γ Δ → Ne Γ A → Ne Δ A
@@ -92,9 +102,15 @@ Sem  : Ctx → Ty → Set
 -- Semantic values are either neutral terms, or meta-representation of introduction forms
 Sem Γ A = Ne Γ A ⊎ Sem′ Γ A
 
-Sem′ Γ (fun A B) = (Δ : Ctx) → Wk Γ Δ → Sem Δ A → Sem Δ B
+Sem′ Γ (fun A B) = (Δ : Ctx) → Wk Γ Δ → Sem Δ A → Sem Δ B -- these need to be Sem°
 Sem′ Γ boo       = Bool
 Sem′ Γ (prd A)   = ⊥
+
+Sem° : Ctx → Ty → Set
+Sem° Γ A = Σ Ty λ B → Sem Γ B × Co B A
+
+coe-Sem° : Sem° Γ A → Co A B → Sem° Γ B
+coe-Sem° (C , t , co′) co = C , t , trans co′ co
 
 wkₚ : Wk Γ Δ → Sem′ Γ A → Sem′ Δ A
 wkₛ : Wk Γ Δ → Sem  Γ A → Sem  Δ A
@@ -110,6 +126,9 @@ wkₛ δ (inj₂ t) = inj₂ (wkₚ δ t)
 raise : (A : Ty) → Ne Γ A → Sem Γ A
 raise _ = inj₁
 
+raise° : (A : Ty) → Ne Γ A → Sem° Γ A
+raise° A t = A , inj₁ t , refl
+
 lower′ : (A : Ty) → Sem′ Γ A → Nf Γ A
 lower  : (A : Ty) → Sem Γ A → Nf Γ A
 
@@ -121,12 +140,20 @@ lower′         (prd A)   ()
 lower _ (inj₁ t) = neuₙ t
 lower A (inj₂ t) = lower′ A t
 
+lower° : (A : Ty) → Sem° Γ A → Nf° Γ A
+lower° = {!!}
 
 Env : Ctx → Ctx → Set
 Env Γ Δ = NP (Sem Δ) Γ
 
 wkₑₙᵥ : Wk Γ Δ → Env Ω Γ → Env Ω Δ
 wkₑₙᵥ δ = map (wkₛ δ)
+
+app-2 : Sem° Γ (fun A B) → Sem° Γ A → Sem° Γ B
+app-2 (C , inj₁ f , co) t = raise° _ (coe-app (coe-ne f co) (lower° _ t))
+app-2 (fun A₁ B₂ , inj₂ f , co) t = {!!}
+app-2 (boo , inj₂ y , co) t with impossible co
+... | ()
 
 
 appₛ : Sem Γ (fun A B) → Sem Γ A → Sem Γ B
