@@ -9,6 +9,7 @@ open import Data.Nat using (ℕ; zero; suc)
 open import Data.Maybe using (Maybe; just; nothing)
 open import Data.Product using (_×_ ; _,_)
 open import Data.Bool using (Bool; true; false)
+open import Data.Empty using (⊥)
 
 data Ty : Set where
   fun : Ty → Ty → Ty
@@ -20,6 +21,7 @@ Ctx = List Ty
 
 variable
   A B C : Ty
+  A₁ A₂ B₁ B₂ : Ty
   Γ Δ Ω : Ctx
 
 Var : Ctx → Ty → Set
@@ -30,6 +32,7 @@ data Co : Ty → Ty → Set where
   sym  : Co A B → Co B A
   trans : Co A B → Co B C → Co A C
   prd : Co (fun A boo) (prd A)
+  fun : Co A₁ A₂ → Co B₁ B₂ → Co (fun A₁ B₁) (fun A₂ B₂)
 
 data Tm (Γ : Ctx) : Ty → Set where
   var : Var Γ A → Tm Γ A
@@ -73,6 +76,10 @@ data Ne Γ where
   varₙ : Var Γ A → Co A B → Ne Γ B
   appₙ : Ne Γ (fun A B) → Nf Γ A → Ne Γ B
 
+coe-ne : Ne Γ A → Co A B → Ne Γ B
+coe-ne (varₙ x co′) co = varₙ x (trans co′ co)
+coe-ne (appₙ f t) co = appₙ (coe-ne f (fun refl co)) t
+
 wkₙ : Wk Γ Δ → Nf Γ A → Nf Δ A
 wkᵦ : Wk Γ Δ → Ne Γ A → Ne Δ A
 
@@ -87,14 +94,14 @@ Sem Γ A = Ne Γ A ⊎ Sem′ Γ A
 
 Sem′ Γ (fun A B) = (Δ : Ctx) → Wk Γ Δ → Sem Δ A → Sem Δ B
 Sem′ Γ boo       = Bool
-Sem′ Γ (prd A)   = {!!}
+Sem′ Γ (prd A)   = ⊥
 
 wkₚ : Wk Γ Δ → Sem′ Γ A → Sem′ Δ A
 wkₛ : Wk Γ Δ → Sem  Γ A → Sem  Δ A
 
-wkₚ {A = fun A B} δ t        = λ Ω δ′ x → t Ω (δ ⨟ δ′) x
+wkₚ {A = fun A B} δ t = λ Ω δ′ x → t Ω (δ ⨟ δ′) x
 wkₚ {A = boo}     δ t = t
-wkₚ {A = prd A}   δ t = {!!}
+wkₚ {A = prd A}   δ t = t
 
 wkₛ δ (inj₁ t) = inj₁ (wkᵦ δ t)
 wkₛ δ (inj₂ t) = inj₂ (wkₚ δ t)
@@ -109,7 +116,7 @@ lower  : (A : Ty) → Sem Γ A → Nf Γ A
 lower′ {Γ = Γ} (fun A B) t     = lamₙ (lower B (t (A ∷ Γ) wk (raise A (varₙ zero refl))))
 lower′         boo       false = nayₙ
 lower′         boo       true  = yayₙ
-lower′         (prd A)   t     = {!!}
+lower′         (prd A)   ()
 
 lower _ (inj₁ t) = neuₙ t
 lower A (inj₂ t) = lower′ A t
