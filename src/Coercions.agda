@@ -56,10 +56,12 @@ wkₜ δ (suc t)     = suc (wkₜ δ t)
 wkₜ δ (ind n z s) = ind (wkₜ δ n) (wkₜ δ z) (wkₜ δ s)
 -}
 
+data Nf° (Γ : Ctx) : Ty → Set
 data Nf (Γ : Ctx) : Ty → Set
 data Ne (Γ : Ctx) : Ty → Set
 
-
+data Nf° Γ where
+  coeₙ : Nf Γ A → Co A B → Nf° Γ B
 
 data Nf Γ where
   lamₙ : Nf (A ∷ Γ) B → Nf Γ (fun A B)
@@ -68,7 +70,7 @@ data Nf Γ where
   neuₙ : Ne Γ A → Nf Γ B
 
 data Ne Γ where
-  varₙ : Var Γ A → Ne Γ A
+  varₙ : Var Γ A → Co A B → Ne Γ B
   appₙ : Ne Γ (fun A B) → Nf Γ A → Ne Γ B
 
 wkₙ : Wk Γ Δ → Nf Γ A → Nf Δ A
@@ -85,7 +87,7 @@ Sem Γ A = Ne Γ A ⊎ Sem′ Γ A
 
 Sem′ Γ (fun A B) = (Δ : Ctx) → Wk Γ Δ → Sem Δ A → Sem Δ B
 Sem′ Γ boo       = Bool
-Sem′ Γ (prd t)   = {!!}
+Sem′ Γ (prd A)   = {!!}
 
 wkₚ : Wk Γ Δ → Sem′ Γ A → Sem′ Δ A
 wkₛ : Wk Γ Δ → Sem  Γ A → Sem  Δ A
@@ -104,7 +106,7 @@ raise _ = inj₁
 lower′ : (A : Ty) → Sem′ Γ A → Nf Γ A
 lower  : (A : Ty) → Sem Γ A → Nf Γ A
 
-lower′ {Γ = Γ} (fun A B) t     = lamₙ (lower B (t (A ∷ Γ) wk (raise A (varₙ zero))))
+lower′ {Γ = Γ} (fun A B) t     = lamₙ (lower B (t (A ∷ Γ) wk (raise A (varₙ zero refl))))
 lower′         boo       false = nayₙ
 lower′         boo       true  = yayₙ
 lower′         (prd A)   t     = {!!}
